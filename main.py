@@ -37,45 +37,16 @@ product_number_to_product_description = df.set_index("Product #")[
     "Product Description"
 ].to_dict()
 
-# Input: Product Description, Quantity
-input = [
-    {
-        "Product Description": "Yogurt Club Pack Costco",
-        "Quantity": 41063,
-    },
-    {
-        "Product Description": "QUAKER  Yogurt Club Pack Retail 30ct",
-        "Quantity": 4000,
-    },
-    {
-        "Product Description": "Family Pack 18ct Maple & Brown Sugar",
-        "Quantity": 3600,
-    },
-    {
-        "Product Description": "IQO  66ct Club Pack - new mix",
-        "Quantity": 35000,
-    },
-    {
-        "Product Description": "Food Service Chewy  Choc. Chip",
-        "Quantity": 5400,
-    },
-    {
-        "Product Description": "FRITO LAY 54 CT VARIETY ",
-        "Quantity": 26880,
-    },
-    {
-        "Product Description": "Yogourt Chocolate Variety",
-        "Quantity": 3000,
-    },
-    {
-        "Product Description": "Agro. 2L Natrel Plus 2% Van Case",
-        "Quantity": 1000,
-    },
-    {
-        "Product Description": "Sea Salt Caramel Mousse",
-        "Quantity": 64,
-    },
-]
+# read from csv
+input_df = pd.read_csv("data/sample.csv")
+input = []
+for index, row in input_df.iterrows():
+    input.append(
+        {
+            "Product Description": row["Product Description"],
+            "Quantity": row["Quantity"],
+        }
+    )
 
 # Define product data like below from input
 # {
