@@ -1,5 +1,5 @@
 import json
-from math import ceil
+from math import ceil, floor
 
 import pandas as pd
 import pulp
@@ -13,17 +13,40 @@ sheet_names = pd.ExcelFile(file_path).sheet_names
 df = pd.read_excel(file_path, sheet_name="MASTER DATA")
 
 # filter rows where Status is "Active"
-df = df[df["Status"] == "Active"]
+# df = df[df["Status"] == "Active"]
 
 # select relevant columns
 df = df[
     [
         "Product #",
         "Product Description",
-        "Qty/hr             (calculate Qty/Shift/8)",
+        "Qty/Labour Hr              (calculated Qty/Shift/8/Staff)",
         "Staff",
     ]
 ]
+
+# convert "Qty/Labour Hr              (calculated Qty/Shift/8/Staff)" to "Qty/Labour Hr (calculated Qty/Shift/8/Staff)"
+df.columns = df.columns.str.replace(
+    "Qty/Labour Hr              (calculated Qty/Shift/8/Staff)",
+    "Qty/Labour Hr (calculated Qty/Shift/8/Staff)",
+)
+
+# convert "Product #" to string
+df["Product #"] = df["Product #"].astype(str)
+
+# convert "Product Description" to string
+df["Product Description"] = df["Product Description"].astype(str)
+
+# convert "Qty/Labour Hr (calculated Qty/Shift/8/Staff)" to numeric, errors='coerce' will convert non-numeric values to NaN
+df["Qty/Labour Hr (calculated Qty/Shift/8/Staff)"] = pd.to_numeric(
+    df["Qty/Labour Hr (calculated Qty/Shift/8/Staff)"], errors="coerce"
+)
+
+# convert "Staff" to numeric, errors='coerce' will convert non-numeric values to NaN
+df["Staff"] = pd.to_numeric(df["Staff"], errors="coerce")
+
+# clean "Product Description" column by removing leading/trailing spaces
+df["Product Description"] = df["Product Description"].str.strip()
 
 df = df.dropna()
 
@@ -64,7 +87,7 @@ for item in input:
         product_number = product_description_to_product_number[product_description]
         qty_per_shift = df.loc[
             df["Product #"] == product_number,
-            "Qty/hr             (calculate Qty/Shift/8)",
+            "Qty/Labour Hr (calculated Qty/Shift/8/Staff)",
         ].values[0]
         staff = df.loc[df["Product #"] == product_number, "Staff"].values[0]
 
@@ -82,7 +105,7 @@ for item in input:
                 "Planned Hours": None,
                 "Asked Quantity": quantity,
                 "Planned Quantity": None,
-                "Estimated Overproduction": None,
+                "Estimated Attainment": None,
             }
         )
 
@@ -91,7 +114,7 @@ for item in input:
 # print("+++++++++++")
 
 # Total available staff-hours in the week (e.g. 5 days × 8 hrs/day × 10 staff)
-total_hours = 5000
+total_hours = 100000
 
 # Define the LP problem
 model = pulp.LpProblem("Production_Planning", pulp.LpMaximize)
@@ -130,6 +153,7 @@ for p in products:
     h = hours[p].varValue
     h = ceil(h)
     q = products[p]["productivity"] * h
+    q = floor(q)
     print(
         f"{product_number_to_product_description[p]}: Allocate {h:.2f} hours → Produce {q:.0f} units"
     )
@@ -142,7 +166,7 @@ for p in products:
             "Planned Hours": h,
             "Asked Quantity": asked_quantity,
             "Planned Quantity": q,
-            "Estimated Overproduction": f"{round((q - asked_quantity) / asked_quantity, 2) * 100}%",
+            "Estimated Attainment": f"{round(q / asked_quantity, 2) * 100}%",
         }
     )
 
