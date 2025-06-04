@@ -5,173 +5,148 @@ import pandas as pd
 import pulp
 import streamlit as st
 
-file_path = "data/Daily Operating & Production Order Entry Report.xlsx"
 
-sheet_names = pd.ExcelFile(file_path).sheet_names
+def load_master_data(file_path):
+    return pd.read_excel(file_path, sheet_name="MASTER DATA")
 
-# read MASTER DATA and the following columns = Product #, Qty/Shift, Staff
-df = pd.read_excel(file_path, sheet_name="MASTER DATA")
 
-# filter rows where Status is "Active"
-# df = df[df["Status"] == "Active"]
-
-# select relevant columns
-df = df[
-    [
-        "Product #",
-        "Product Description",
-        "Qty/Labour Hr              (calculated Qty/Shift/8/Staff)",
-        "Staff",
+def preprocess_master_data(df):
+    df = df[
+        [
+            "Product #",
+            "Product Description",
+            "Qty/Labour Hr              (calculated Qty/Shift/8/Staff)",
+            "Staff",
+        ]
     ]
-]
-
-# convert "Qty/Labour Hr              (calculated Qty/Shift/8/Staff)" to "Qty/Labour Hr (calculated Qty/Shift/8/Staff)"
-df.columns = df.columns.str.replace(
-    "Qty/Labour Hr              (calculated Qty/Shift/8/Staff)",
-    "Qty/Labour Hr (calculated Qty/Shift/8/Staff)",
-)
-
-# convert "Product #" to string
-df["Product #"] = df["Product #"].astype(str)
-
-# convert "Product Description" to string
-df["Product Description"] = df["Product Description"].astype(str)
-
-# convert "Qty/Labour Hr (calculated Qty/Shift/8/Staff)" to numeric, errors='coerce' will convert non-numeric values to NaN
-df["Qty/Labour Hr (calculated Qty/Shift/8/Staff)"] = pd.to_numeric(
-    df["Qty/Labour Hr (calculated Qty/Shift/8/Staff)"], errors="coerce"
-)
-
-# convert "Staff" to numeric, errors='coerce' will convert non-numeric values to NaN
-df["Staff"] = pd.to_numeric(df["Staff"], errors="coerce")
-
-# clean "Product Description" column by removing leading/trailing spaces
-df["Product Description"] = df["Product Description"].str.strip()
-
-df = df.dropna()
-
-# create Product Description to Proect # mapping
-product_description_to_product_number = df.set_index("Product Description")[
-    "Product #"
-].to_dict()
-
-# create a mapping of Product # to Product Description
-product_number_to_product_description = df.set_index("Product #")[
-    "Product Description"
-].to_dict()
-
-# read from csv
-input_df = pd.read_csv("data/sample.csv")
-input = []
-for index, row in input_df.iterrows():
-    input.append(
-        {
-            "Product Description": row["Product Description"],
-            "Quantity": row["Quantity"],
-        }
+    df.columns = df.columns.str.replace(
+        "Qty/Labour Hr              (calculated Qty/Shift/8/Staff)",
+        "Qty/Labour Hr (calculated Qty/Shift/8/Staff)",
     )
+    df["Product #"] = df["Product #"].astype(str)
+    df["Product Description"] = df["Product Description"].astype(str)
+    df["Qty/Labour Hr (calculated Qty/Shift/8/Staff)"] = pd.to_numeric(
+        df["Qty/Labour Hr (calculated Qty/Shift/8/Staff)"], errors="coerce"
+    )
+    df["Staff"] = pd.to_numeric(df["Staff"], errors="coerce")
+    df["Product Description"] = df["Product Description"].str.strip()
+    df = df.dropna()
+    return df
 
-# Define product data like below from input
-# {
-#     "Product_A": {"po_qty": 10000, "productivity": 500, "staff": 10},
-#     "Product_B": {"po_qty": 8000, "productivity": 400, "staff": 8},
-# }
 
-products = {}
-output = []
-for item in input:
-    product_description = item["Product Description"]
-    quantity = item["Quantity"]
+def create_product_mappings(df):
+    product_description_to_product_number = df.set_index("Product Description")[
+        "Product #"
+    ].to_dict()
+    product_number_to_product_description = df.set_index("Product #")[
+        "Product Description"
+    ].to_dict()
+    return product_description_to_product_number, product_number_to_product_description
 
-    if product_description in product_description_to_product_number:
-        product_number = product_description_to_product_number[product_description]
-        qty_per_shift = df.loc[
-            df["Product #"] == product_number,
-            "Qty/Labour Hr (calculated Qty/Shift/8/Staff)",
-        ].values[0]
-        staff = df.loc[df["Product #"] == product_number, "Staff"].values[0]
 
-        products[product_number] = {
-            "po_qty": quantity,
-            "productivity": qty_per_shift,
-            "staff": staff,
-        }
-    else:
-        print(f"Product description '{product_description}' not found in MASTER DATA.")
-        output.append(
+def load_input_data(input_csv):
+    input_df = pd.read_csv(input_csv)
+    input_list = []
+    for _, row in input_df.iterrows():
+        input_list.append(
             {
-                "Product Description": product_description,
-                "Status": "Error: Product not found in MASTER DATA",
-                "Planned Hours": None,
-                "Asked Quantity": quantity,
-                "Planned Quantity": None,
-                "Estimated Attainment": None,
+                "Product Description": row["Product Description"],
+                "Quantity": row["Quantity"],
             }
         )
+    return input_list
 
-# print("+++++++++++")
-# print(json.dumps(products, indent=4))
-# print("+++++++++++")
 
-# Total available staff-hours in the week (e.g. 5 days × 8 hrs/day × 10 staff)
-total_hours = 100000
+def build_products(input_list, df, product_description_to_product_number):
+    products = {}
+    for item in input_list:
+        product_description = item["Product Description"]
+        quantity = item["Quantity"]
 
-# Define the LP problem
-model = pulp.LpProblem("Production_Planning", pulp.LpMaximize)
+        if product_description in product_description_to_product_number:
+            product_number = product_description_to_product_number[product_description]
+            qty_per_shift = df.loc[
+                df["Product #"] == product_number,
+                "Qty/Labour Hr (calculated Qty/Shift/8/Staff)",
+            ].values[0]
+            staff = df.loc[df["Product #"] == product_number, "Staff"].values[0]
 
-# Decision variables: hours allocated to each product
-hours = {p: pulp.LpVariable(f"h_{p}", lowBound=0, cat="Continuous") for p in products}
+            products[product_number] = {
+                "po_qty": quantity,
+                "productivity": qty_per_shift,
+                "staff": staff,
+            }
+        else:
+            raise Exception(
+                f"Product Description '{product_description}' not found in master data."
+            )
+    return products
 
-# Objective: Maximize total production
-model += (
-    pulp.lpSum([products[p]["productivity"] * hours[p] for p in products]),
-    "Total_Production",
-)
 
-# Constraint: Total labor-hours used <= available
-model += (
-    pulp.lpSum([hours[p] * products[p]["staff"] for p in products]) <= total_hours,
-    "Total_Labor_Hours",
-)
-
-# Constraint: Cannot produce more than PO quantity
-for p in products:
+def optimize_production(products, total_hours):
+    model = pulp.LpProblem("Production_Planning", pulp.LpMaximize)
+    hours = {
+        p: pulp.LpVariable(f"h_{p}", lowBound=0, cat="Continuous") for p in products
+    }
     model += (
-        products[p]["productivity"] * hours[p] <= products[p]["po_qty"],
-        f"Max_PO_Qty_{p}",
+        pulp.lpSum([products[p]["productivity"] * hours[p] for p in products]),
+        "Total_Production",
     )
-
-# Solve the model
-model.solve()
-
-print("+++++++++++")
-print("SOLUTION:")
-print("+++++++++++")
-
-# Output the results
-for p in products:
-    h = hours[p].varValue
-    h = ceil(h)
-    q = products[p]["productivity"] * h
-    q = floor(q)
-    print(
-        f"{product_number_to_product_description[p]}: Allocate {h:.2f} hours → Produce {q:.0f} units"
+    model += (
+        pulp.lpSum([hours[p] * products[p]["staff"] for p in products]) <= total_hours,
+        "Total_Labor_Hours",
     )
+    for p in products:
+        model += (
+            products[p]["productivity"] * hours[p] <= products[p]["po_qty"],
+            f"Max_PO_Qty_{p}",
+        )
+    model.solve()
+    return hours
 
-    asked_quantity = products[p]["po_qty"]
-    output.append(
-        {
-            "Product Description": product_number_to_product_description[p],
-            "Status": "Planned",
-            "Planned Hours": h,
-            "Asked Quantity": asked_quantity,
-            "Planned Quantity": q,
-            "Estimated Attainment": f"{round(q / asked_quantity, 2) * 100}%",
-        }
+
+def build_output(products, hours, product_number_to_product_description):
+    output = []
+    for p in products:
+        h = hours[p].varValue
+        h = ceil(h)
+        q = products[p]["productivity"] * h
+        q = floor(q)
+        asked_quantity = products[p]["po_qty"]
+        output.append(
+            {
+                "Product Description": product_number_to_product_description[p],
+                "Status": "Planned",
+                "Planned Hours": h,
+                "Asked Quantity": asked_quantity,
+                "Planned Quantity": q,
+                "Estimated Attainment": f"{round(q / asked_quantity, 2) * 100}%",
+            }
+        )
+    return output
+
+
+def main():
+    file_path = "data/Daily Operating & Production Order Entry Report.xlsx"
+    input_csv = "data/sample.csv"
+    total_hours = 100000
+
+    df = load_master_data(file_path)
+    df = preprocess_master_data(df)
+    product_description_to_product_number, product_number_to_product_description = (
+        create_product_mappings(df)
     )
+    input_list = load_input_data(input_csv)
+    products = build_products(input_list, df, product_description_to_product_number)
 
-st.title("Production Planning Optimization")
+    if products:
+        hours = optimize_production(products, total_hours)
+        output = build_output(products, hours, product_number_to_product_description)
 
-# Display the results in a Streamlit table
-st.subheader("Production Plan Results")
-st.write(pd.DataFrame(output))
+    st.title("Production Planning Optimization")
+    st.subheader("Production Plan Results")
+    st.write(pd.DataFrame(output))
+
+
+if __name__ == "__main__":
+    main()
