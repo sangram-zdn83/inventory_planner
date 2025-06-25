@@ -1,6 +1,7 @@
 # local
 archive/
 data/
+output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

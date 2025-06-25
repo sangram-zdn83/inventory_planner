@@ -1,3 +1,4 @@
+import os
 import json
 
 import streamlit as st
@@ -33,7 +34,7 @@ def main():
         hours,
         product_number_to_product_description,
         input_list,
-        max_shifts_per_day=3,
+        max_shifts_per_day=1,
     )
 
     # Convert date objects to ISO strings for JSON serialization
@@ -42,13 +43,17 @@ def main():
             if key in item and hasattr(item[key], "isoformat"):
                 item[key] = item[key].isoformat()
 
+    # Ensure output directory exists
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
+
     # Write timeline to a JSON file
-    with open("production_timeline.json", "w") as f:
+    with open(os.path.join(output_dir, "production_timeline.json"), "w") as f:
         json.dump(timeline, f, indent=2)
 
     # Write errors to a JSON file if any
     if errors:
-        with open("error.json", "w") as f:
+        with open(os.path.join(output_dir, "error.json"), "w") as f:
             json.dump(errors, f, indent=2)
 
     st.title("Production Planning Optimization")

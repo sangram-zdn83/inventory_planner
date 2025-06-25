@@ -7,7 +7,7 @@ def build_parallel_production_timeline(
     hours,
     product_number_to_product_description,
     input_list,
-    max_shifts_per_day=3,
+    max_shifts_per_day=1,  # Everyone work 1 shift per day by default
 ):
     desc_to_due = {item["Product Description"]: item["Due Date"] for item in input_list}
     desc_to_asked_qty = {
@@ -20,7 +20,8 @@ def build_parallel_production_timeline(
         h = hours[p].varValue
         h = ceil(h)
         staff = products[p]["staff"]
-        shifts_needed = ceil(h / 8)
+        available_labour_hours = staff * 7.5  # 7.5 hours (MASTER DATA column I)
+        shifts_needed = ceil(h / available_labour_hours)
         days_needed = ceil(shifts_needed / max_shifts_per_day)
         prod_desc = product_number_to_product_description[p]
         due_date = desc_to_due[prod_desc].date()  # Convert to datetime.date
